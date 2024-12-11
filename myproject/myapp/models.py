@@ -7,6 +7,7 @@ class Student(models.Model):
     student_program_id = models.CharField(max_length=255, null=True, blank=True)
     batch_name = models.CharField(max_length=255, null=True, blank=True)
 
+
 class Subject(models.Model):
     subject_id = models.IntegerField(primary_key=True)
     subject_name = models.CharField(max_length=255)
