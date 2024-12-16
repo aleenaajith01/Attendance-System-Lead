@@ -7,6 +7,8 @@ import json
 import cv2
 import os  # Import the os module
 import time
+import threading
+
 
 @csrf_exempt
 def fetch_and_update_data(request):
@@ -122,7 +124,7 @@ def send_attendance_data(current_hour):
 def trigger_attendance_requests(request):
     if request.method == 'GET':
         try:
-            current_date = datetime.date.today()  # Use datetime.date for the current date
+            current_date = date.today()  # Use datetime.date for the current date
             
             # Fetch unique end times for the current date
             end_times = (
@@ -152,36 +154,28 @@ def trigger_attendance_requests(request):
 
 
 
-def capture_images_from_cameras(rtsp_urls, start_time, end_time, capture_interval=5):
+def capture_images_from_cameras(rtsp_urls, start_time, end_time, output_dir, capture_interval=5):
     """
     Captures images from multiple RTSP cameras between a specific start and end time.
-
-    Args:
-        rtsp_urls (list): List of RTSP URLs of the cameras.
-        start_time (datetime): The start time to begin capturing.
-        end_time (datetime): The end time to stop capturing.
-        capture_interval (int): Time interval between captures in seconds (default is 5 seconds).
     """
-    # Ensure the `media/captures` folder exists
-    output_dir = "media/captures"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)  # Create the directory if it doesn't exist
-        print(f"Created directory: {output_dir}")
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)  # This avoids the FileExistsError
+    print(f"Using directory: {output_dir}")
 
     print(f"Waiting for the start time: {start_time}")
     while datetime.now() < start_time:
         time.sleep(1)  # Sleep for 1 second
     print(f"Start time reached: {start_time}. Starting continuous capture.")
 
-    while datetime.now() <= end_time:
+    while start_time <= datetime.now() <= end_time:
         for rtsp_url in rtsp_urls:
-            print(f"Connecting to camera: {rtsp_url}")
+            # print(f"Connecting to camera: {rtsp_url}")
             cap = cv2.VideoCapture(rtsp_url)
-            
+
             if not cap.isOpened():
                 print(f"Error: Unable to connect to camera {rtsp_url}.")
                 continue
-            
+
             ret, frame = cap.read()
             if ret:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -193,49 +187,96 @@ def capture_images_from_cameras(rtsp_urls, start_time, end_time, capture_interva
                 print(f"Error: Failed to capture image from {rtsp_url}.")
             
             cap.release()
-        
+
         time.sleep(capture_interval)  # Wait for the specified interval before the next round of captures
 
     print(f"End time reached: {end_time}. Stopping capture.")
 
 
+
 @csrf_exempt
 def fetch_and_capture_images(request):
     """
-    Fetches distinct start and end times from the Attendance table
-    and captures images from RTSP cameras based on those times.
+    Fetches start and end times from the database and captures images from multiple RTSP cameras using multithreading.
     """
     try:
-        # Fetch distinct start and end times for the current day
+        # Fetch distinct start times along with their corresponding end times and hours for the current day
         current_date = datetime.now().date()
-        attendance_records = Attendance.objects.filter(date=current_date).distinct()
+        attendance_records = Attendance.objects.filter(date=current_date).values('from_time', 'to_time', 'hour').distinct()
 
-        start_times = attendance_records.values_list('from_time', flat=True).distinct()
-        end_times = attendance_records.values_list('to_time', flat=True).distinct()
-
-        if not start_times or not end_times:
+        if not attendance_records:
             return JsonResponse({"message": "No start or end times found for today."}, status=200)
 
         # Convert time fields into datetime objects
-        start_end_times = [
-            (datetime.combine(current_date, start_time), datetime.combine(current_date, end_time))
-            for start_time, end_time in zip(start_times, end_times)
+        start_end_times_hour = [
+            (
+                datetime.combine(current_date, record['from_time']),
+                datetime.combine(current_date, record['to_time']),
+                record['hour']
+            )
+            for record in attendance_records
         ]
+        print(start_end_times_hour)
 
-        # List of RTSP URLs (can be fetched dynamically or stored in a settings/config file)
-        rtsp_urls = [
-            'rtsp://admin:password123@192.168.0.240/cam/realmonitor?channel=1&subtype=0',
-            'rtsp://admin:password123@192.168.0.241/cam/realmonitor?channel=1&subtype=0',
-            'rtsp://admin:password123@192.168.0.242/cam/realmonitor?channel=1&subtype=0',
-            'rtsp://admin:password123@192.168.0.243/cam/realmonitor?channel=1&subtype=0',
-        ]
+        # List of RTSP URLs for all classrooms
+        classrooms = {
+            "Class_A": [
+                'rtsp://admin:password123@192.168.0.220/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.221/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.222/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.223/cam/realmonitor?channel=1&subtype=0'
+            ],
+            "Class_B": [
+                'rtsp://admin:password123@192.168.0.224/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.225/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.226/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.227/cam/realmonitor?channel=1&subtype=0'
+            ],
+            "Class_C" : [
+                'rtsp://admin:password123@192.168.0.228/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.229/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.230/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.231/cam/realmonitor?channel=1&subtype=0'
+            ],  
+            "Class_D" : [
+                'rtsp://admin:password123@192.168.0.232/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.233/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.234/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.235/cam/realmonitor?channel=1&subtype=0'
+            ],          
+            "Class_E" : [
+                'rtsp://admin:password123@192.168.0.236/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.237/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.238/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.239/cam/realmonitor?channel=1&subtype=0'
+            ],   
+            "Class_F" : [
+                'rtsp://admin:password123@192.168.0.240/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.241/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.242/cam/realmonitor?channel=1&subtype=0',
+                'rtsp://admin:password123@192.168.0.243/cam/realmonitor?channel=1&subtype=0'
+                        
+            ]}
+            # Add other classes here
 
-        # Start capturing images for each start and end time
-        for start_time, end_time in start_end_times:
-            print(f"Capturing images from {start_time} to {end_time}.")
-            capture_images_from_cameras(rtsp_urls, start_time, end_time)
+        threads = []
 
-        return JsonResponse({"message": "Images captured successfully for all time slots."}, status=200)
+        # Start capturing images for each classroom and time slot using threads
+        for class_name, rtsp_urls in classrooms.items():
+            for start_time, end_time, current_hour in start_end_times_hour:
+                output_dir = f"media/captures/{current_date}/Hour_{current_hour}/{class_name}"
+                thread = threading.Thread(
+                    target=capture_images_from_cameras,
+                    args=(rtsp_urls, start_time, end_time, output_dir)
+                )
+                threads.append(thread)
+                thread.start()
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+
+        return JsonResponse({"message": "Images captured successfully for all classrooms."}, status=200)
 
     except Exception as e:
         return JsonResponse({"error": "An error occurred while processing the request.", "details": str(e)}, status=500)
