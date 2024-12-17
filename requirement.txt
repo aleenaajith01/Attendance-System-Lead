@@ -1,0 +1,6 @@
+python
+Django
+Psycopg2
+PostgreSQL development Libraries
+Requests
+Scheduler
