@@ -37,7 +37,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'myapp'
+    'myapp',
+    'django_celery_results'
+    # 'django_celery_beat'
 ]
 
 MIDDLEWARE = [
@@ -84,9 +86,9 @@ WSGI_APPLICATION = 'myproject.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'postgres',  # Replace with your Postgres database name
+        'NAME': 'lead_database',  # Replace with your Postgres database name
         'USER': 'postgres',  # Replace with your Postgres username
-        'PASSWORD': 'Aleena@123',  # Replace with your Postgres password
+        'PASSWORD': 'postgres',  # Replace with your Postgres password
         'HOST': 'localhost',          # Replace with your database host, e.g., '127.0.0.1'
         'PORT': '5432',               # Default Postgres port
     }
@@ -132,3 +134,13 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Celery settings
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Update with your broker URL
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_BACKEND = 'django-db'
+
+# Redis configurations
+REDIS_HOST = 'localhost'
+REDIS_PORT = 6379
