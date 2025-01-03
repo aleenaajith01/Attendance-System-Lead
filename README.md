@@ -2,11 +2,15 @@
 
 ## Steps for Deployment
 
-1. Clone This Repository
+1. Install pip.
+```
+sudo apt-get install python3-pip
+```
+2. Clone This Repository
 ```
 git clone <Repo URL>
 ```
-2. Install Required Libraries.
+3. Install Required Libraries.
 ```
 pip install -r requirements.txt
 ```
