@@ -1,0 +1,12 @@
+django
+requests
+scheduler
+celery
+redis
+celery[redis]
+pandas
+insightface
+onnxruntime
+django-celery-results
+django-celery-beat
+scikit-learn
