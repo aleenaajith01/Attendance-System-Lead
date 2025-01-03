@@ -8,7 +8,7 @@ git clone <Repo URL>
 ```
 2. Install Required Libraries.
 ```
-pip install -m requirements.txt
+pip install -r requirements.txt
 ```
 3. Run Django Server.
 ```
