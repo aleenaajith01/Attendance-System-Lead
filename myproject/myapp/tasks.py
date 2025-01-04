@@ -16,7 +16,7 @@ import requests
 
 # Define IST timezone
 ist_timezone = pytz.timezone('Asia/Kolkata')
-current_date = datetime.now(ist_timezone).date()
+# current_date = datetime.now(ist_timezone).date()
 # current_time = datetime.now(ist_timezone)
 
 
@@ -35,6 +35,8 @@ def capture_images_from_cameras(rtsp_urls, start_time_str, end_time_str, output_
     # end_time = datetime.combine(current_date, end_time_str)
 
     # This produces a naive datetime (no timezone)
+    current_date = datetime.now(ist_timezone).date()
+
     naive_start_time = datetime.combine(current_date, start_time_str)
     naive_end_time = datetime.combine(current_date, end_time_str)
     
@@ -46,7 +48,7 @@ def capture_images_from_cameras(rtsp_urls, start_time_str, end_time_str, output_
     os.makedirs(output_dir, exist_ok=True)  # This avoids the FileExistsError
     print(f"Using directory: {output_dir}")
 
-# Calculate the pending time until the start time
+    # Calculate the pending time until the start time
     current_time = datetime.now(ist_timezone)
     time_to_start = (start_time - current_time).total_seconds()
 
@@ -176,7 +178,7 @@ def ml_search_algorithm(dataframe, feature_column, test_vector, name_email=['Nam
 
 
 @shared_task
-def attendance_task(input_folder, output_folder, start_time_str, end_time_str, current_hour):
+def attendance_task(input_folder, output_folder, start_time_str, end_time_str, current_hour, subject_id):
     """
     1) Wait until start_time
     2) Every 10 minutes, process images, then wait 10 minutes
@@ -196,6 +198,8 @@ def attendance_task(input_folder, output_folder, start_time_str, end_time_str, c
     # ... similarly for end_time ...
     
     # This produces a naive datetime (no timezone)
+    current_date = datetime.now(ist_timezone).date()
+
     naive_start_time = datetime.combine(current_date, start_time_str)
     naive_end_time = datetime.combine(current_date, end_time_str)
     
@@ -279,7 +283,7 @@ def attendance_task(input_folder, output_folder, start_time_str, end_time_str, c
             os.remove(filepath)
 
         # 2B) Update attendance
-        update_attendance_in_db(detected_faces, student_emails, current_hour, Attendance)
+        update_attendance_in_db(detected_faces, student_emails, current_hour, subject_id, Attendance)
 
         # 2C) Sleep for 10 minutes
         print(f"[{datetime.now()}] Sleeping for 10 minutes before next run.")
@@ -288,7 +292,7 @@ def attendance_task(input_folder, output_folder, start_time_str, end_time_str, c
     print("Attendance task completed.")
 
 # Keep the same helper function
-def update_attendance_in_db(detected_faces, student_emails, current_hour, Attendance):
+def update_attendance_in_db(detected_faces, student_emails, current_hour, subject_id, Attendance):
     current_date = date.today()
     for email in student_emails:
         is_present = email in detected_faces
@@ -296,7 +300,8 @@ def update_attendance_in_db(detected_faces, student_emails, current_hour, Attend
             student_email=email,
             date=current_date,
             hour=current_hour,
-            defaults={'is_present': is_present}
+            defaults={'is_present': is_present},
+            subject_id_id=subject_id
         )
 
 
@@ -307,7 +312,10 @@ def send_attendance_data_task(current_hour, start_time_str, end_time_str, interv
     from start_time to end_time + 10 minutes.
     """
 
+    current_date = datetime.now(ist_timezone).date()
+
     # This produces a naive datetime (no timezone)
+
     naive_start_time = datetime.combine(current_date, start_time_str)
     naive_end_time = datetime.combine(current_date, end_time_str)
     

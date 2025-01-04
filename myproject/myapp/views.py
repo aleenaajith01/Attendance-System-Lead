@@ -228,7 +228,8 @@ def fetch_and_capture_images(request):
             (
                 record['from_time'],
                 record['to_time'],
-                record['hour']
+                record['hour'],
+                record['subject_id_id']
             )
             for record in attendance_records
         ]
@@ -276,7 +277,7 @@ def fetch_and_capture_images(request):
 
         # Schedule tasks for each classroom
         for class_name, rtsp_urls in classrooms.items():
-            for start_time, end_time, current_hour in start_end_times_hour:
+            for start_time, end_time, current_hour, subject_id in start_end_times_hour:
 
                 # initialize input and output folders
                 capture_dir = f"media/captured_images/{current_date}/Hour_{current_hour}/{class_name}"
@@ -297,7 +298,8 @@ def fetch_and_capture_images(request):
                     output_folder = processed_dir,
                     start_time_str = start_time,
                     end_time_str = end_time,
-                    current_hour = current_hour
+                    current_hour = current_hour,
+                    subject_id = subject_id
                 )
 
                 send_attendance_data_task.delay(

@@ -21,9 +21,9 @@ def send_request(url):
 
 if __name__ == "__main__":
     # Schedule the tasks
-    schedule.every().day.at("07:00").do(lambda: send_request(url1))  # Replace time as needed
+    schedule.every().day.at("13:00").do(lambda: send_request(url1))  # Replace time as needed
     # schedule.every().day.at("07:05").do(lambda: send_request(url2))  # Replace time as needed
-    schedule.every().day.at("11:08").do(lambda: send_request(url3))
+    schedule.every().day.at("15:35").do(lambda: send_request(url3))
 
     print("Scheduler is running...")
 
