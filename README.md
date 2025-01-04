@@ -1,6 +1,6 @@
 # Attendance-System-Lead
 
-## Steps for Deployment
+## Steps for Deployment In UBUNTU
 
 1. Install pip.
 ```
