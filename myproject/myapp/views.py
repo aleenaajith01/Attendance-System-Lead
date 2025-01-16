@@ -1,7 +1,7 @@
 from django.http import JsonResponse
 from .models import Student, Subject, Attendance
 import requests
-from datetime import datetime, date # Correct import for datetime
+from datetime import datetime, date, timedelta # Correct import for datetime
 from django.views.decorators.csrf import csrf_exempt
 import json
 import cv2
@@ -12,7 +12,7 @@ import aiohttp
 import asyncio
 from django.utils.decorators import async_only_middleware
 from asgiref.sync import sync_to_async
-from .tasks import capture_images_from_cameras, attendance_task, send_attendance_data_task
+from .tasks import capture_images_from_cameras, attendance_task, send_attendance_data_task, process_attendance_last
 import pytz
 
 # Define IST timezone
@@ -209,7 +209,7 @@ def fetch_and_capture_images(request):
     try:
         current_date = datetime.now(ist_timezone).date()
         
-        attendance_records = Attendance.objects.filter(date=current_date).values('from_time', 'to_time', 'hour').distinct()
+        attendance_records = Attendance.objects.filter(date=current_date).values('from_time', 'to_time', 'hour', 'subject_id_id').distinct()
 
         if not attendance_records:
             return JsonResponse({"message": "No schedules for today."}, status=200)
@@ -254,26 +254,27 @@ def fetch_and_capture_images(request):
                 'rtsp://admin:password123@192.168.0.229/cam/realmonitor?channel=1&subtype=0',
                 'rtsp://admin:password123@192.168.0.230/cam/realmonitor?channel=1&subtype=0',
                 'rtsp://admin:password123@192.168.0.231/cam/realmonitor?channel=1&subtype=0'
-            ],  
-            "Class_D" : [
-                'rtsp://admin:password123@192.168.0.232/cam/realmonitor?channel=1&subtype=0',
-                'rtsp://admin:password123@192.168.0.233/cam/realmonitor?channel=1&subtype=0',
-                'rtsp://admin:password123@192.168.0.234/cam/realmonitor?channel=1&subtype=0',
-                'rtsp://admin:password123@192.168.0.235/cam/realmonitor?channel=1&subtype=0'
-            ],          
-            "Class_E" : [
-                'rtsp://admin:password123@192.168.0.236/cam/realmonitor?channel=1&subtype=0',
-                'rtsp://admin:password123@192.168.0.237/cam/realmonitor?channel=1&subtype=0',
-                'rtsp://admin:password123@192.168.0.238/cam/realmonitor?channel=1&subtype=0',
-                'rtsp://admin:password123@192.168.0.239/cam/realmonitor?channel=1&subtype=0'
-            ],   
-            "Class_F" : [
-                'rtsp://admin:password123@192.168.0.240/cam/realmonitor?channel=1&subtype=0',
-                'rtsp://admin:password123@192.168.0.241/cam/realmonitor?channel=1&subtype=0',
-                'rtsp://admin:password123@192.168.0.242/cam/realmonitor?channel=1&subtype=0',
-                'rtsp://admin:password123@192.168.0.243/cam/realmonitor?channel=1&subtype=0'
+            ]
+            # "Class_D" : [
+            #     'rtsp://admin:password123@192.168.0.232/cam/realmonitor?channel=1&subtype=0',
+            #     'rtsp://admin:password123@192.168.0.233/cam/realmonitor?channel=1&subtype=0',
+            #     'rtsp://admin:password123@192.168.0.234/cam/realmonitor?channel=1&subtype=0',
+            #     'rtsp://admin:password123@192.168.0.235/cam/realmonitor?channel=1&subtype=0'
+            # ],          
+            # "Class_E" : [
+            #     'rtsp://admin:password123@192.168.0.236/cam/realmonitor?channel=1&subtype=0',
+            #     'rtsp://admin:password123@192.168.0.237/cam/realmonitor?channel=1&subtype=0',
+            #     'rtsp://admin:password123@192.168.0.238/cam/realmonitor?channel=1&subtype=0',
+            #     'rtsp://admin:password123@192.168.0.239/cam/realmonitor?channel=1&subtype=0'
+            # ],   
+            # "Class_F" : [
+            #     'rtsp://admin:password123@192.168.0.240/cam/realmonitor?channel=1&subtype=0',
+            #     'rtsp://admin:password123@192.168.0.241/cam/realmonitor?channel=1&subtype=0',
+            #     'rtsp://admin:password123@192.168.0.242/cam/realmonitor?channel=1&subtype=0',
+            #     'rtsp://admin:password123@192.168.0.243/cam/realmonitor?channel=1&subtype=0'
                         
-            ]}
+            # ]
+            }
 
         # Schedule tasks for each classroom
         for class_name, rtsp_urls in classrooms.items():
@@ -283,33 +284,145 @@ def fetch_and_capture_images(request):
                 capture_dir = f"media/captured_images/{current_date}/Hour_{current_hour}/{class_name}"
                 processed_dir = f"media/processed_images/{current_date}/Hour_{current_hour}/{class_name}"
                 
+                # end_time is a TimeField, so we need to combine with current_date
+                naive_start_dt = datetime.combine(current_date, start_time)
+                start_dt = ist_timezone.localize(naive_start_dt)  # make it aware
+
+                # # Capture images from classrooms
+                # capture_images_from_cameras.delay(    # run the task from the called time till endtime
+                #     rtsp_urls = rtsp_urls,
+                #     start_time_str = start_time,
+                #     end_time_str = end_time,
+                #     output_dir = capture_dir,
+                #     capture_interval = 60
+                # )
+
                 # capture classroom images  from classrooms for time table
-                capture_images_from_cameras.delay(
-                    rtsp_urls = rtsp_urls,
-                    start_time_str = start_time,
-                    end_time_str = end_time,
-                    output_dir = capture_dir,
-                    capture_interval=60
+                capture_images_from_cameras.apply_async(     # call & run the task from the start time only
+                    kwargs={
+                         'rtsp_urls' : rtsp_urls,
+                        'start_time_str' : start_time,
+                        'end_time_str' : end_time,
+                        'output_dir' : capture_dir,
+                        'capture_interval' : 60
+                    },
+                    eta=start_dt  # run at this exact datetime
                 )
 
-                # process the captured images while capturing
-                attendance_task.delay(
-                    input_folder = capture_dir,
-                    output_folder = processed_dir,
-                    start_time_str = start_time,
-                    end_time_str = end_time,
-                    current_hour = current_hour,
-                    subject_id = subject_id
+                # # process the captured images while capturing
+                # attendance_task.delay(    # run the task from the called time till endtime
+                #     input_folder = capture_dir,
+                #     output_folder = processed_dir,
+                #     start_time_str = start_time,
+                #     end_time_str = end_time,
+                #     current_hour = current_hour,
+                #     subject_id = subject_id
+                # )
+                
+                # For processing the captured Images
+                attendance_task.apply_async(        # call & run the task from the start time only
+                    kwargs={
+                        'input_folder' : capture_dir,
+                        'output_folder' : processed_dir,
+                        'start_time_str' : start_time,
+                        'end_time_str' : end_time,
+                        'current_hour' : current_hour,
+                        'subject_id' : subject_id
+                    },
+                    eta=start_dt  # run at this exact datetime
                 )
 
-                send_attendance_data_task.delay(
-                    current_hour = current_hour, 
-                    start_time_str = start_time, 
-                    end_time_str = end_time, 
-                    interval_minutes=10
+                ## run the task from the call time itself 
+                # send_attendance_data_task.delay(  # run the task from the called time till endtime
+                #     current_hour = current_hour, 
+                #     start_time_str = start_time, 
+                #     end_time_str = end_time, 
+                #     interval_minutes=10
+                # )
+
+                ## For sending the attendance data to Linways in every 10 min
+                send_attendance_data_task.apply_async(      # call & run the task from the start time only
+                    kwargs={
+                        'current_hour' : current_hour, 
+                        'start_time_str' : start_time, 
+                        'end_time_str' : end_time, 
+                        'interval_minutes' : 10
+                    },
+                    eta=start_dt  # run at this exact datetime
                 )
+                
 
         return JsonResponse({"message": "Image capture tasks scheduled successfully for all classrooms."}, status=200)
 
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def take_attendance(request):
+
+    current_date = datetime.now(ist_timezone).date()
+    
+    attendance_records = Attendance.objects.filter(date=current_date).values('from_time', 'to_time', 'hour', 'subject_id_id').distinct()
+
+    if not attendance_records:
+        return JsonResponse({"message": "No schedules for today."}, status=200)
+    
+
+    start_end_times_hour = [
+        (
+            record['from_time'],
+            record['to_time'],
+            record['hour'],
+            record['subject_id_id']
+        )
+        for record in attendance_records
+    ]
+    # classrooms = ['Class_A', 'Class_B', 'Class_C', 'Class_D', 'Class_E', 'CLass_F']
+    classrooms = ['Class_A', 'Class_B']
+
+    # Schedule tasks for each classroom
+    for class_name in classrooms:
+        for start_time, end_time, current_hour, subject_id in start_end_times_hour:
+
+            # initialize input and output folders
+            capture_dir = f"media/captured_images/{current_date}/Hour_{current_hour}/{class_name}"
+            processed_dir = f"media/processed_images/{current_date}/Hour_{current_hour}/{class_name}"
+            
+            # Combine date + end_time -> local (IST) aware datetime
+            # end_time is a TimeField, so we need to combine with current_date
+            naive_end_dt = datetime.combine(current_date, end_time)
+            end_dt = ist_timezone.localize(naive_end_dt)  # make it aware
+
+            # If end_dt is in the past, decide whether to skip or run now
+            now_ist = datetime.now(ist_timezone)
+            if end_dt < now_ist:
+                # Either skip or schedule immediately.
+                # For example, schedule now + 10 seconds:
+                end_dt = now_ist + timedelta(seconds=10)
+
+            # Schedule Celery to run at end_dt
+            process_attendance_last.apply_async(
+                kwargs={
+                    'input_folder': capture_dir,
+                    'output_folder': processed_dir,
+                    'current_hour': current_hour,
+                    'subject_id': subject_id
+                },
+                eta=end_dt  # run at this exact datetime
+            )
+
+    return JsonResponse({"message": "Scheduled processing at end_time for each classroom."}, status=200)
+
+
+def data_for_frontend_dashboard(request):
+    """
+    For sending data from database to frontend.
+    """
+    # Count all Student objects in the database
+    total_students = Student.objects.count()
+    
+    # Return a JSON response
+    return JsonResponse({
+        "total_students": total_students
+    })

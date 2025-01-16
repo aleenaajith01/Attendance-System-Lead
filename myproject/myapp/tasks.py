@@ -99,81 +99,78 @@ def ml_search_algorithm(dataframe, feature_column, test_vector, name_email=['Nam
     return 'Unknown', 'Unknown'
 
 
-# @shared_task
-# def attendance_task(input_folder, output_folder):
-#     """Processes attendance by detecting faces and updating the database."""
-#     # Dynamically load models
-#     Student = apps.get_model('myapp', 'Student')
-#     Subject = apps.get_model('myapp', 'Subject')
-#     Attendance = apps.get_model('myapp', 'Attendance')
+@shared_task
+def process_attendance_last(input_folder, output_folder, current_hour, subject_id):
+    """Processes attendance by detecting faces and updating the database."""
 
-#     # Configure InsightFace
-#     faceapp = FaceAnalysis(name='buffalo_l', root='insightface_model', provider=['CUDAExecutionProvider'])
-#     faceapp.prepare(ctx_id=0, det_size=(640, 640), det_thresh=0.5)
+    # Ensure the output directory exists
+    os.makedirs(input_folder, exist_ok=True)  # This avoids the FileExistsError
 
-#     # Connect to Redis
-#     redis_client = redis.StrictRedis(host='localhost', port=6379)
-#     redis_client.ping()
+    # Ensure the output directory exists
+    os.makedirs(output_folder, exist_ok=True)  # This avoids the FileExistsError
+    # print(f"Using directory: {output_folder}")
 
-#     # Retrieve embeddings from Redis
-#     name = 'Lead:Batch_1_2023_cleaned'
-#     retrive_dict = redis_client.hgetall(name)
-#     retrive_series = pd.Series(retrive_dict).apply(lambda x: np.frombuffer(x, dtype=np.float32))
-#     retrive_series.index = [key.decode() for key in retrive_series.index]
-#     retrive_df = retrive_series.to_frame().reset_index()
-#     retrive_df.columns = ['name_email', 'facial_features']
-#     retrive_df[['Name', 'email']] = retrive_df['name_email'].apply(lambda x: x.split('#')).apply(pd.Series)
-#     student_emails = retrive_df['email']
+    # Dynamically load models
+    Student = apps.get_model('myapp', 'Student')
+    Subject = apps.get_model('myapp', 'Subject')
+    Attendance = apps.get_model('myapp', 'Attendance')
 
-#     detected_faces = []
+    # Configure InsightFace
+    faceapp = FaceAnalysis(name='buffalo_l', root='insightface_model', provider=['CUDAExecutionProvider'])
+    faceapp.prepare(ctx_id=0, det_size=(640, 640), det_thresh=0.5)
 
-#     # Process images
-#     for filename in os.listdir(input_folder):
-#         filepath = os.path.join(input_folder, filename)
-#         test_image = cv2.imread(filepath)
+    # Connect to Redis
+    redis_client = redis.StrictRedis(host='localhost', port=6379)
+    redis_client.ping()
 
-#         if test_image is None:
-#             print(f"Warning: Unable to read image {filename}.")
-#             continue
+    # Retrieve embeddings from Redis
+    name = 'Lead:Batch_1_2023_cleaned'
+    retrive_dict = redis_client.hgetall(name)
+    retrive_series = pd.Series(retrive_dict).apply(lambda x: np.frombuffer(x, dtype=np.float32))
+    retrive_series.index = [key.decode() for key in retrive_series.index]
+    retrive_df = retrive_series.to_frame().reset_index()
+    retrive_df.columns = ['name_email', 'facial_features']
+    retrive_df[['Name', 'email']] = retrive_df['name_email'].apply(lambda x: x.split('#')).apply(pd.Series)
+    student_emails = retrive_df['email']
 
-#         # Detect faces and extract embeddings
-#         results = faceapp.get(test_image)
-#         test_copy = test_image.copy()
+    detected_faces = []
 
-#         for res in results:
-#             x1, y1, x2, y2 = res['bbox'].astype(int)
-#             embeddings = res['embedding']
-#             person_name, person_email = ml_search_algorithm(
-#                 retrive_df, 'facial_features', test_vector=embeddings, name_email=['Name', 'email'], thresh=0.45
-#             )
+    # Process images
+    for filename in os.listdir(input_folder):
+        filepath = os.path.join(input_folder, filename)
+        test_image = cv2.imread(filepath)
 
-#             color = (0, 255, 0) if person_email != 'Unknown' else (0, 0, 255)
-#             cv2.rectangle(test_copy, (x1, y1), (x2, y2), color)
-#             cv2.putText(test_copy, person_email, (x1, y1 - 10), cv2.FONT_HERSHEY_DUPLEX, 0.7, color, 1)
+        if test_image is None:
+            print(f"Warning: Unable to read image {filename}.")
+            continue
 
-#             if person_email != 'Unknown' and person_email not in detected_faces:
-#                 detected_faces.append(person_email)
+        # Detect faces and extract embeddings
+        results = faceapp.get(test_image)
+        test_copy = test_image.copy()
 
-#         # Save processed image
-#         os.makedirs(output_folder, exist_ok=True)
-#         output_filepath = os.path.join(output_folder, filename)
-#         cv2.imwrite(output_filepath, test_copy)
-#         os.remove(filepath)
+        for res in results:
+            x1, y1, x2, y2 = res['bbox'].astype(int)
+            embeddings = res['embedding']
+            person_name, person_email = ml_search_algorithm(
+                retrive_df, 'facial_features', test_vector=embeddings, name_email=['Name', 'email'], thresh=0.45
+            )
 
-#     # Update attendance using Django ORM
-#     update_attendance_in_db(detected_faces, student_emails, Attendance)
+            color = (0, 255, 0) if person_email != 'Unknown' else (0, 0, 255)
+            cv2.rectangle(test_copy, (x1, y1), (x2, y2), color)
+            cv2.putText(test_copy, person_email, (x1, y1 - 10), cv2.FONT_HERSHEY_DUPLEX, 0.7, color, 1)
 
-# def update_attendance_in_db(detected_faces, student_emails, Attendance):
-#     """Updates attendance using Django ORM."""
-#     current_date = date.today()
+            if person_email != 'Unknown' and person_email not in detected_faces:
+                detected_faces.append(person_email)
 
-#     for email in student_emails:
-#         is_present = email in detected_faces
-#         Attendance.objects.update_or_create(
-#             student_email=email,
-#             date=current_date,
-#             defaults={'is_present': is_present}
-#         )
+        # Save processed image
+        os.makedirs(output_folder, exist_ok=True)
+        output_filepath = os.path.join(output_folder, filename)
+        cv2.imwrite(output_filepath, test_copy)
+        os.remove(filepath)
+
+    # Update attendance using Django ORM
+    # update_attendance_in_db(detected_faces, student_emails, Attendance)
+    update_attendance_in_db(detected_faces, student_emails, current_hour, subject_id, Attendance, Student)
 
 
 
@@ -206,6 +203,9 @@ def attendance_task(input_folder, output_folder, start_time_str, end_time_str, c
     # Convert from naive to IST-aware datetime
     start_time = ist_timezone.localize(naive_start_time)
     end_time = ist_timezone.localize(naive_end_time)
+
+    # Add 10 minutes to end_time
+    end_time = end_time + timedelta(minutes=5)
     
     # 1) Sleep until start_time
     current_time = datetime.now(ist_timezone)
@@ -283,8 +283,8 @@ def attendance_task(input_folder, output_folder, start_time_str, end_time_str, c
             os.remove(filepath)
 
         # 2B) Update attendance
-        update_attendance_in_db(detected_faces, student_emails, current_hour, subject_id, Attendance)
-
+        update_attendance_in_db(detected_faces, student_emails, current_hour, subject_id, Attendance, Student)
+        
         # 2C) Sleep for 10 minutes
         print(f"[{datetime.now()}] Sleeping for 10 minutes before next run.")
         time.sleep(1 * 60)  # 1 minutes in seconds
@@ -292,17 +292,55 @@ def attendance_task(input_folder, output_folder, start_time_str, end_time_str, c
     print("Attendance task completed.")
 
 # Keep the same helper function
-def update_attendance_in_db(detected_faces, student_emails, current_hour, subject_id, Attendance):
+# def update_attendance_in_db(detected_faces, student_emails, current_hour, subject_id, Attendance):
+#     current_date = date.today()
+#     for email in student_emails:
+#         is_present = email in detected_faces
+#         Attendance.objects.update_or_create(
+#             student_email_id=email,
+#             date=current_date,
+#             hour=current_hour,
+#             defaults={'is_present': is_present},
+#             subject_id_id=subject_id
+#         )
+
+
+# Mark attendance for all duplicate rows
+
+def update_attendance_in_db(detected_faces, student_emails, current_hour, subject_id, Attendance, Student):
     current_date = date.today()
     for email in student_emails:
-        is_present = email in detected_faces
-        Attendance.objects.update_or_create(
-            student_email=email,
+        is_present = (email in detected_faces)
+        
+        # 1) Get the actual Student object that has student_email = email
+        try:
+            student_obj = Student.objects.get(student_email=email)
+        except Student.DoesNotExist:
+            # Decide how to handle if the student isn't in your Student table
+            print(f"No Student found with email: {email}")
+            continue
+        
+        # 2) Filter or create Attendance row(s)
+        qs = Attendance.objects.filter(
+            student_email=student_obj,
             date=current_date,
             hour=current_hour,
-            defaults={'is_present': is_present},
             subject_id_id=subject_id
         )
+        
+        if qs.exists():
+            # Update all duplicates so they have is_present = is_present
+            qs.update(is_present=is_present)
+        else:
+            # Create a new Attendance record
+            Attendance.objects.create(
+                student_email_id=student_obj,  # Pass the Student object, not the email string
+                date=current_date,
+                hour=current_hour,
+                subject_id_id=subject_id,
+                is_present=is_present
+            )
+
 
 
 @shared_task

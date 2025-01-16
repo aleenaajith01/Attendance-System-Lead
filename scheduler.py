@@ -2,9 +2,11 @@ import schedule
 import time
 import requests
 
-url1 = "http://127.0.0.1:8000/fetch-update-data/"
-url2 = "http://127.0.0.1:8000/trigger-attendance-requests/"
-url3 = "http://127.0.0.1:8000/fetch-and-capture-images/"
+url1 = "http://127.0.0.1:8000/backend/fetch-update-data/"
+url2 = "http://127.0.0.1:8000/backend/trigger-attendance-requests/"
+url3 = "http://127.0.0.1:8000/backend/fetch-and-capture-images/"
+url4 = "http://127.0.0.1:8000/backend/take_attendance/"
+
 
 def send_request(url):
     try:
@@ -21,9 +23,10 @@ def send_request(url):
 
 if __name__ == "__main__":
     # Schedule the tasks
-    schedule.every().day.at("13:00").do(lambda: send_request(url1))  # Replace time as needed
+    schedule.every().day.at("14:40").do(lambda: send_request(url1))  # Replace time as needed
     # schedule.every().day.at("07:05").do(lambda: send_request(url2))  # Replace time as needed
-    schedule.every().day.at("15:35").do(lambda: send_request(url3))
+    schedule.every().day.at("14:40").do(lambda: send_request(url3))
+    # schedule.every().day.at("11:42").do(lambda: send_request(url4))
 
     print("Scheduler is running...")
 
